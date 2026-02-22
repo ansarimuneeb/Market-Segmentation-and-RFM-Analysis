@@ -1,0 +1,237 @@
+#Load Library 
+library(dplyr) 
+library(tidyr) 
+library(MASS) 
+ 
+#Load Data 
+data <- read.csv(file.choose()) 
+ 
+#Exploring 
+str(data) 
+summary(data) 
+sum(is.na(data)) 
+summary(as.factor(data$CustomerID)) 
+#there are many NAs and redundancy in CustomerID 
+ 
+length(unique(data$CustomerID)) 
+summary(data[data$CustomerID == 17841, ]) 
+#tells us that there is redundancy in CustomerID 
+ 
+data_1 <- data[is.na(data$CustomerID), ] 
+data_2 <- data[complete.cases(data$CustomerID), ] 
+#Creating 2 datasets for all customers and registered customers 
+ 
+summary(data_1) 
+summary(data_2) 
+ 
+################# 
+#CLUSTER ANALYSIS# 
+ 
+################# 
+ 
+#Cluster Analysis with all oversations 
+ 
+## Load Packages and Set Seed 
+set.seed(1) 
+ 
+# Import Data 
+seg <- data 
+ 
+# Data Preprocessing: Scale the variables 
+scaled_data <- scale(cbind(seg$Quantity, seg$ReturnRate, seg$UnitPrice)) 
+ 
+# Run hierarchical clustering 
+seg_hclust_complete <- hclust(dist(scaled_data), method = "complete") 
+seg_hclust_single <- hclust(dist(scaled_data), method = "single") 
+seg_hclust_average <- hclust(dist(scaled_data), method = "average") 
+seg_hclust_centroid <- hclust(dist(scaled_data), method = "centroid") 
+ 
+# Plot dendrogram for hierarchical clustering 
+plot(seg_hclust_complete, main = "complete") 
+plot(seg_hclust_single, main = "single") 
+plot(seg_hclust_average, main = "average") 
+plot(seg_hclust_centroid, main = "centroid") 
+ 
+#Making Elbow plot with each Linkage Type revealed Complete to be the best linkage 
+# Plot Elbow plot 
+x <- c(1:10) 
+sort_height <- sort(seg_hclust_complete$height, decreasing = TRUE)
+y <- sort_height[1:10] 
+plot(x, y); lines(x, y, col = "blue") 
+ 
+# Run k-means clustering with an optimal number of clusters 
+# Here, we'll use 3 clusters as an example 
+optimal_k <- 3 
+seg_kmeans <- kmeans(scaled_data, centers = optimal_k) 
+ 
+# Add segment number back to original data 
+seg$segment <- seg_kmeans$cluster 
+ 
+#Segmentation and Clustering with No NAs 
+ 
+# Import Data 
+seg2 <- data_2 
+ 
+# Data Preprocessing: Scale the variables 
+scaled_data2 <- scale(cbind(seg2$Quantity, seg2$ReturnRate, seg2$UnitPrice)) 
+ 
+# Run hierarchical clustering 
+seg_hclust_complete2 <- hclust(dist(scaled_data2), method = "complete") 
+seg_hclust_single2 <- hclust(dist(scaled_data2), method = "single") 
+seg_hclust_average2 <- hclust(dist(scaled_data2), method = "average") 
+seg_hclust_centroid2 <- hclust(dist(scaled_data2), method = "centroid") 
+ 
+ 
+# Plot dendrogram for hierarchical clustering 
+plot(seg_hclust_complete2, main = "complete") 
+plot(seg_hclust_single2, main = "single")
+plot(seg_hclust_average2, main = "average") 
+plot(seg_hclust_centroid2, main = "centroid") 
+ 
+# Plot Elbow plot 
+x2 <- c(1:10) 
+sort_height2 <- sort(seg_hclust_complete2$height, decreasing = TRUE) 
+y2 <- sort_height[1:10] 
+plot(x2, y2); lines(x2, y2, col = "blue") 
+#here single giving us the best result, decided to go for complete for the sake of consistency 
+ 
+# Determine the optimal number of clusters using the elbow method 
+# (This step may not be directly applicable to hierarchical clustering) 
+# You may need to decide the number of clusters based on domain knowledge or other criteria 
+ 
+# Run k-means clustering with an optimal number of clusters 
+# Here, we'll use 5 clusters as an example 
+optimal_k2 <- 3 
+seg_kmeans2 <- kmeans(scaled_data2, centers = optimal_k2) 
+ 
+# Add segment number back to original data 
+seg2$segment <- seg_kmeans2$cluster 
+ 
+#View of Segments 
+# Load the necessary library 
+ 
+# Group the data by Segment and summarise the average values 
+seg_summary2 <- seg2 %>% 
+  group_by(segment) %>% 
+  summarise( 
+    Count = n(),  # Count the number of records for each Segment 
+    AverageUnitPrice = mean(UnitPrice, na.rm = TRUE), 
+    AverageQuantity = mean(Quantity, na.rm = TRUE), 
+    AverageReturnRate = mean(ReturnRate, na.rm = TRUE) 
+  ) %>% 
+  pivot_longer(cols = -segment, names_to = "Metric", values_to = "Value") %>% 
+  pivot_wider(names_from = segment, values_from = Value) 
+ 
+# View the resulting data frame 
+print(seg_summary2) 
+ 
+# Export data to a CSV file, complete observations 
+write.csv(seg, file = "rough_segmentation_result_A.csv", row.names = FALSE) 
+ 
+############################### 
+#LDA and ANNOVA with Redundancy# 
+############################## 
+result <- read.csv(file.choose()) ## Choose segmentation result file 
+ 
+lda.fit <- lda (segment ~ Age + Education + Income + Married + Work, data = result) 
+ 
+lda.fit 
+#2 LDA equations as 3 segments. 
+ 
+lda.result <- predict(lda.fit, result) 
+lda.result 
+ 
+names(lda.result) 
+ 
+ 
+lda.class <- lda.result$class 
+lda.class 
+ 
+tclass <- table(result$segment, lda.class) 
+tclass 
+ 
+ 
+sum(result$segment == 1) 
+sum(result$segment == 2) 
+sum(result$segment == 3) 
+ 
+ 
+# Extract linear discriminant scores 
+lda.scores <- predict(lda.fit)$x 
+ 
+# Perform ANOVA on LD1 
+lm_LD1 <- lm(lda.scores[,1] ~ result$segment) 
+anova_LD1 <- anova(lm_LD1) 
+print(anova_LD1) 
+#Significant 
+ 
+# Perform ANOVA on LD2 
+lm_LD2 <- lm(lda.scores[,2] ~ result$segment) 
+anova_LD2 <- anova(lm_LD2) 
+print(anova_LD2) 
+#Results not significant 
+ 
+#LDA with removed redundancy, just in case 
+result2 <- result[!duplicated(result$CustomerID), ] 
+#This removes duplicate values 
+ 
+lda.fit2 <- lda (segment ~ Age + Education + Income + Married + Work, data = result2) 
+lda.fit2 
+#Both equations not significant 
+ 
+lda.result2 <- predict(lda.fit2, result2) 
+lda.result2 
+ 
+names(lda.result2) 
+ 
+lda.class2 <- lda.result2$class 
+lda.class2 
+ 
+tclass2 <- table(result2$segment, lda.class2) 
+tclass2 
+#Still all predictions made of customer segment 2 
+ 
+#No point in considering data of removed redundancy 
+ 
+################### 
+# RFM Analysis  # 
+################### 
+ 
+set.seed(1) 
+ 
+## Read in RFM data 
+rfm <- data_2 
+ 
+ 
+# Convert 'InvoiceDate' to Date object 
+rfm$InvoiceDate <- as.Date(rfm$InvoiceDate) 
+ 
+# Calculate recency based on the maximum date in the dataset 
+last_date <- max(rfm$InvoiceDate) 
+rfm$recency_days <- as.numeric(difftime(last_date, rfm$InvoiceDate, units = "days")) 
+ 
+ 
+# How many levels for each 
+groups <- 5  # This will use quintiles to sort and give 125 total groups 
+ 
+# Independent Sort 
+rfm$recency_score_indep <- ntile(-rfm$recency_days, groups) 
+rfm$frequency_score_indep <- ntile(rfm$Quantity, groups)  # Assuming 'Quantity' represents frequency 
+rfm$monetary_score_indep <- ntile(rfm$UnitPrice * rfm$Quantity, groups)  # Assuming 'UnitPrice' * 
+'Quantity' represents monetary 
+rfm$rfm_score_indep <- paste(rfm$recency_score_indep * 100 + rfm$frequency_score_indep * 10 + 
+rfm$monetary_score_indep) 
+ 
+# Sequential Sort 
+rfm$recency_score_seq <- ntile(-rfm$recency_days, groups) 
+rfm$frequency_score_seq <- ave(rfm$Quantity, rfm$recency_score_seq, FUN = function(x) ntile(x, 
+groups)) 
+rfm$monetary_score_seq <- ave(rfm$UnitPrice * rfm$Quantity, interaction(rfm$recency_score_seq, 
+rfm$frequency_score_seq), FUN = function(x) ntile(x, groups)) 
+rfm$rfm_score_seq <- paste(rfm$recency_score_seq * 100 + rfm$frequency_score_seq * 10 + 
+rfm$monetary_score_seq) 
+ 
+# Final Output 
+head(rfm) 
+## Export RFM Results with Independent and Sequential Sort 
+write.csv(rfm, file = "rfm_result.csv", row.names = FALSE)
